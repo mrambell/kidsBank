@@ -111,3 +111,7 @@ dialog.wide{width:100%;max-width:min(480px,calc(100vw - 32px))}
 .how{background:var(--card);border:1.5px solid var(--desk-line);border-radius:12px;padding:10px 12px;font-size:.88rem;margin:0}
 .how b{display:block;font-family:var(--display);font-weight:600;margin-bottom:2px}
 .how span{display:block;margin-top:6px;color:var(--muted)}
+#version{align-self:center;border:0;background:none;color:var(--muted);font-size:.78rem;cursor:pointer;padding:4px 8px}
+details.plain{border:0;padding:0}
+details.plain summary{font:700 .85rem var(--body);color:var(--muted)}
+#inst-facts{font:400 .75rem/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0;color:var(--ink);user-select:all}

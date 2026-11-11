@@ -3,12 +3,12 @@
 //
 // When you change any file, raise the number in CACHE so installed copies fetch the new version.
 // When you add a file, add it to FILES so it is available offline from the first visit.
-const CACHE = "pocketbank-v3";
+const CACHE = "pocketbank-v5";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/styles.css",
   "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png",
   "js/app.js", "js/core.js", "js/state.js", "js/actions.js", "js/views.js", "js/charts.js",
-  "js/pin.js", "js/codec.js", "js/transfer.js", "js/install.js", "js/format.js", "js/dom.js",
+  "js/pin.js", "js/codec.js", "js/transfer.js", "js/install.js", "js/version.js", "js/format.js", "js/dom.js",
   "js/i18n/index.js", "js/i18n/en.js", "js/i18n/it.js", "js/i18n/pl.js", "js/i18n/de.js",
   "vendor/qrcode.js", "vendor/jsQR.js", "vendor/fonts/fonts.css",
   "vendor/fonts/fredoka-latin-wght-normal.woff2", "vendor/fonts/fredoka-latin-ext-wght-normal.woff2",

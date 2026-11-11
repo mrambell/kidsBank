@@ -141,7 +141,9 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000`. Opening `index.html` directly from disk does not work, because browsers block script modules on `file:` pages.
 
-**Releasing a change:** raise the number in `CACHE` in `sw.js`. Installed copies show the saved version first and pick up the new one on the next start.
+**Releasing a change:** raise the number in `CACHE` in `sw.js` and `VERSION` in `js/version.js` together. Installed copies show the saved version first and pick up the new one on the next start.
+
+**If a device will not install or looks out of date:** the version is shown at the very bottom of the page. Tap it, or press **Install app**, and open **Technical details**. It lists the app version, whether the browser offered installation, the offline worker state and whether storage works. No version at the bottom means the device is showing a copy from before version 5: reload twice or clear the site's data.
 
 ## Project structure
 

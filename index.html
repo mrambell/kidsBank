@@ -22,6 +22,7 @@
     <div class="row"><button class="btn" id="install" type="button" hidden>Install app</button><button class="btn" id="lock" type="button">Parent</button></div>
   </header>
   <main id="app" style="display:flex;flex-direction:column;gap:16px"><p class="note">Opening the bank…</p></main>
+  <button id="version" type="button"></button>
 </div>
 
 <dialog id="pin">
@@ -49,6 +50,7 @@
 </div></dialog>
 <dialog id="inst" class="wide"><div class="col">
   <h2 id="inst-title"></h2><p class="sub" id="inst-text"></p>
+  <details class="plain"><summary>Technical details</summary><pre id="inst-facts"></pre></details>
   <div class="row" style="justify-content:flex-end"><button class="btn primary" type="button" id="inst-close"></button></div>
 </div></dialog>
 <dialog id="imp" class="wide"><div class="col">
