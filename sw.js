@@ -3,7 +3,7 @@
 //
 // When you change any file, raise the number in CACHE so installed copies fetch the new version.
 // When you add a file, add it to FILES so it is available offline from the first visit.
-const CACHE = "pocketbank-v2";
+const CACHE = "pocketbank-v3";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/styles.css",
   "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png",
