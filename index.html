@@ -3,12 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
-</head>
-<body>
 <title>Pocket Bank</title>
-<meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700&display=swap">
+<meta name="description" content="A family bank for pocket money. Everything stays on this device.">
+<meta name="theme-color" content="#0E6B53">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pocket Bank">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
 <style>
 /* Layout: one narrow column like a savings passbook. Green balance cover on top, charts, then the ledger. Parent desk slides in under the cover when unlocked. */
 :root{
@@ -37,7 +41,9 @@
   color-scheme:dark }
 
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font:400 16px/1.45 var(--body)}
+[hidden]{display:none!important}
+html{padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.45 var(--body)}
 .wrap{max-width:760px;margin:0 auto;padding-block:20px 48px;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
   display:flex;flex-direction:column;gap:16px}
@@ -113,12 +119,18 @@ dialog form{display:flex;flex-direction:column;gap:12px}
 #pin-in{font:500 1.8rem var(--mono);letter-spacing:.5em;text-align:center;width:100%;border:2px solid var(--line);border-radius:12px;padding:8px;background:var(--bg);color:var(--ink)}
 #pin-err{color:var(--neg);font-weight:700;font-size:.9rem;min-height:1.3em;margin:0}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 18px;border-radius:999px;font-weight:700;font-size:.9rem;max-width:calc(100vw - 32px);text-align:center}
+dialog.wide{width:100%;max-width:min(480px,calc(100vw - 32px))}
+.col{display:flex;flex-direction:column;gap:12px}
+#qr-canvas{width:100%;max-width:420px;align-self:center;image-rendering:pixelated;background:#fff;border-radius:8px}
+#scan-video{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;background:#000}
+.paste{background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;width:100%;min-width:0;color:var(--ink)}
 </style>
-
+</head>
+<body>
 <div class="wrap">
   <header class="top">
     <div class="brand"><span class="coin" aria-hidden="true">P</span>Pocket Bank</div>
-    <button class="btn" id="lock" type="button">Parent</button>
+    <div class="row"><button class="btn" id="install" type="button" hidden>Install app</button><button class="btn" id="lock" type="button">Parent</button></div>
   </header>
   <main id="app" style="display:flex;flex-direction:column;gap:16px"><p class="note">Opening the bank…</p></main>
 </div>
@@ -135,8 +147,26 @@ dialog form{display:flex;flex-direction:column;gap:12px}
     </div>
   </form>
 </dialog>
+<dialog id="qr" class="wide"><div class="col">
+  <h2 id="qr-title"></h2><p class="sub" id="qr-text"></p><p class="sub" id="qr-note"></p>
+  <canvas id="qr-canvas" width="10" height="10"></canvas>
+  <div class="row" style="justify-content:flex-end"><button class="btn" type="button" id="qr-copy"></button><button class="btn primary" type="button" id="qr-close"></button></div>
+</div></dialog>
+<dialog id="scan" class="wide"><div class="col">
+  <h2 id="scan-title"></h2><p class="sub" id="scan-text"></p>
+  <video id="scan-video" playsinline muted></video>
+  <form class="col" id="scan-form"><label class="sub" for="scan-paste" id="scan-lab"></label><input class="paste" id="scan-paste" autocomplete="off">
+  <div class="row" style="justify-content:flex-end"><button class="btn" type="button" id="scan-close"></button><button class="btn primary" type="submit" id="scan-use"></button></div></form>
+</div></dialog>
+<dialog id="imp" class="wide"><div class="col">
+  <h2 id="imp-title"></h2><p class="sub" id="imp-text"></p>
+  <div class="row" style="justify-content:flex-end"><button class="btn" type="button" id="imp-cancel"></button><button class="btn primary" type="button" id="imp-ok"></button></div>
+</div></dialog>
+<input type="file" id="file-in" accept="application/json,.json" hidden>
 <div id="toast" role="status" hidden></div>
 
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
 <script>
 /*CORE*/
 function defaultState(){ return {v:1, lang:"en", currency:"€", pinHash:"", example:false,
@@ -193,6 +223,15 @@ en:{mon:"Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec",
  total:"Total",today:"Today",piggy:"Piggy bank at home",inBank:"In the Pocket Bank",ariaHist:"Balance over time",ariaFut:"Projected balance over five years",
  futEmpty:"Once there is money in the account, this shows how it could grow.",futOff:"Interest is switched off, so money in the bank stays the same. A parent can switch it on in the bank rules.",
  futText:"With no new pocket money and nothing spent, {a} would become about <strong>{b}</strong>. In a piggy bank at home it would still be {a}. Investments are shown at their average and will wobble in real life.",
+ device:"This device",devNote:"The bank is stored only on this device. Nothing is sent to a server.",moveOut:"Move to another device",moveIn:"Move a bank here",
+ saveBackup:"Save backup file",loadBackup:"Load backup file",erase:"Erase bank from this device",reallyErase:"Really erase everything?",erased:"Bank erased from this device.",
+ installHint:"To use it like an app, install it from the browser menu. On iPhone: Share, then Add to Home Screen.",install:"Install app",
+ qrText:"On the new device, open Pocket Bank, choose “Move a bank here” and scan this code. It holds the whole bank including the PIN, so show it only to your own devices.",
+ qrMerged:"Older entries were merged into monthly totals so the bank fits in one code. Balances are unchanged.",qrTooBig:"This bank is too large for one code. Use a backup file instead.",
+ copyLink:"Copy link",copied:"Link copied.",closeBtn:"Close",scanText:"Point the camera at the code shown on the other device.",noCam:"The camera is not available. Paste the transfer link instead.",
+ pasteLink:"Or paste the transfer link",useLink:"Use link",badCode:"That is not a Pocket Bank code.",
+ impTitle:"Replace the bank on this device?",impText:"The incoming bank has these accounts: {names}. Everything now on this device will be replaced.",impNone:"none yet",
+ replace:"Replace",moved:"The bank is now on this device.",badFile:"That file is not a Pocket Bank backup.",
  yr:"y",mo:"mo"},
 it:{mon:"gen,feb,mar,apr,mag,giu,lug,ago,set,ott,nov,dic",
  parent:"Genitore",lockDesk:"Chiudi lo sportello genitori",pinChoose:"Scegli un PIN genitore",pinTitle:"PIN genitore",
@@ -221,6 +260,15 @@ it:{mon:"gen,feb,mar,apr,mag,giu,lug,ago,set,ott,nov,dic",
  total:"Totale",today:"Oggi",piggy:"Salvadanaio a casa",inBank:"Nella Pocket Bank",ariaHist:"Saldo nel tempo",ariaFut:"Saldo previsto in cinque anni",
  futEmpty:"Quando ci saranno soldi sul conto, qui vedrai come potrebbero crescere.",futOff:"Gli interessi sono disattivati, quindi i soldi in banca restano uguali. Un genitore può attivarli nelle regole della banca.",
  futText:"Senza nuova paghetta e senza spese, {a} diventerebbero circa <strong>{b}</strong>. In un salvadanaio a casa resterebbero {a}. Gli investimenti sono mostrati alla loro media e nella realtà oscilleranno.",
+ device:"Questo dispositivo",devNote:"La banca è salvata solo su questo dispositivo. Niente viene inviato a un server.",moveOut:"Sposta su un altro dispositivo",moveIn:"Porta qui una banca",
+ saveBackup:"Salva file di backup",loadBackup:"Carica file di backup",erase:"Cancella la banca da questo dispositivo",reallyErase:"Cancellare davvero tutto?",erased:"Banca cancellata da questo dispositivo.",
+ installHint:"Per usarla come un'app, installala dal menu del browser. Su iPhone: Condividi, poi Aggiungi alla schermata Home.",install:"Installa app",
+ qrText:"Sul nuovo dispositivo apri Pocket Bank, scegli «Porta qui una banca» e inquadra questo codice. Contiene tutta la banca, PIN compreso: mostralo solo ai tuoi dispositivi.",
+ qrMerged:"Le voci più vecchie sono state unite in totali mensili per far stare la banca in un solo codice. I saldi non cambiano.",qrTooBig:"Questa banca è troppo grande per un solo codice. Usa un file di backup.",
+ copyLink:"Copia link",copied:"Link copiato.",closeBtn:"Chiudi",scanText:"Inquadra il codice mostrato sull'altro dispositivo.",noCam:"La fotocamera non è disponibile. Incolla il link di trasferimento.",
+ pasteLink:"Oppure incolla il link di trasferimento",useLink:"Usa link",badCode:"Questo non è un codice Pocket Bank.",
+ impTitle:"Sostituire la banca su questo dispositivo?",impText:"La banca in arrivo ha questi conti: {names}. Tutto ciò che è ora su questo dispositivo verrà sostituito.",impNone:"ancora nessuno",
+ replace:"Sostituisci",moved:"La banca è ora su questo dispositivo.",badFile:"Questo file non è un backup di Pocket Bank.",
  yr:"a",mo:"m"},
 pl:{mon:"sty,lut,mar,kwi,maj,cze,lip,sie,wrz,paź,lis,gru",
  parent:"Rodzic",lockDesk:"Zamknij okienko rodzica",pinChoose:"Ustaw PIN rodzica",pinTitle:"PIN rodzica",
@@ -249,6 +297,15 @@ pl:{mon:"sty,lut,mar,kwi,maj,cze,lip,sie,wrz,paź,lis,gru",
  total:"Razem",today:"Dziś",piggy:"Skarbonka w domu",inBank:"W Pocket Banku",ariaHist:"Saldo w czasie",ariaFut:"Przewidywane saldo za pięć lat",
  futEmpty:"Gdy na koncie pojawią się pieniądze, zobaczysz tu, jak mogą rosnąć.",futOff:"Odsetki są wyłączone, więc pieniądze w banku się nie zmieniają. Rodzic może je włączyć w zasadach banku.",
  futText:"Bez nowego kieszonkowego i bez wydatków {a} urosłoby do około <strong>{b}</strong>. W skarbonce w domu nadal byłoby {a}. Inwestycje pokazano według średniej, a w rzeczywistości będą się wahać.",
+ device:"To urządzenie",devNote:"Bank jest zapisany tylko na tym urządzeniu. Nic nie jest wysyłane na serwer.",moveOut:"Przenieś na inne urządzenie",moveIn:"Przenieś bank tutaj",
+ saveBackup:"Zapisz plik kopii zapasowej",loadBackup:"Wczytaj plik kopii zapasowej",erase:"Usuń bank z tego urządzenia",reallyErase:"Na pewno usunąć wszystko?",erased:"Bank usunięty z tego urządzenia.",
+ installHint:"Aby używać jak aplikacji, zainstaluj ją z menu przeglądarki. Na iPhonie: Udostępnij, potem Dodaj do ekranu początkowego.",install:"Zainstaluj aplikację",
+ qrText:"Na nowym urządzeniu otwórz Pocket Bank, wybierz „Przenieś bank tutaj” i zeskanuj ten kod. Zawiera cały bank razem z PIN-em, więc pokazuj go tylko własnym urządzeniom.",
+ qrMerged:"Starsze wpisy połączono w sumy miesięczne, żeby bank zmieścił się w jednym kodzie. Salda się nie zmieniły.",qrTooBig:"Ten bank jest za duży na jeden kod. Użyj pliku kopii zapasowej.",
+ copyLink:"Kopiuj link",copied:"Link skopiowany.",closeBtn:"Zamknij",scanText:"Skieruj aparat na kod pokazany na drugim urządzeniu.",noCam:"Aparat jest niedostępny. Wklej link do przeniesienia.",
+ pasteLink:"Albo wklej link do przeniesienia",useLink:"Użyj linku",badCode:"To nie jest kod Pocket Bank.",
+ impTitle:"Zastąpić bank na tym urządzeniu?",impText:"Przychodzący bank ma te konta: {names}. Wszystko, co jest teraz na tym urządzeniu, zostanie zastąpione.",impNone:"jeszcze żadnych",
+ replace:"Zastąp",moved:"Bank jest teraz na tym urządzeniu.",badFile:"Ten plik nie jest kopią zapasową Pocket Bank.",
  yr:"l.",mo:"mies."},
 de:{mon:"Jan,Feb,Mär,Apr,Mai,Jun,Jul,Aug,Sep,Okt,Nov,Dez",
  parent:"Eltern",lockDesk:"Elternschalter schließen",pinChoose:"Eltern-PIN festlegen",pinTitle:"Eltern-PIN",
@@ -277,6 +334,15 @@ de:{mon:"Jan,Feb,Mär,Apr,Mai,Jun,Jul,Aug,Sep,Okt,Nov,Dez",
  total:"Gesamt",today:"Heute",piggy:"Sparschwein zu Hause",inBank:"In der Pocket Bank",ariaHist:"Kontostand im Zeitverlauf",ariaFut:"Voraussichtlicher Kontostand in fünf Jahren",
  futEmpty:"Sobald Geld auf dem Konto ist, siehst du hier, wie es wachsen könnte.",futOff:"Die Zinsen sind ausgeschaltet, deshalb bleibt das Geld in der Bank gleich. Eltern können sie in den Bankregeln einschalten.",
  futText:"Ohne neues Taschengeld und ohne Ausgaben würden aus {a} etwa <strong>{b}</strong>. Im Sparschwein zu Hause wären es weiterhin {a}. Geldanlagen sind mit ihrem Durchschnitt gezeigt und schwanken in Wirklichkeit.",
+ device:"Dieses Gerät",devNote:"Die Bank ist nur auf diesem Gerät gespeichert. Es wird nichts an einen Server gesendet.",moveOut:"Auf ein anderes Gerät umziehen",moveIn:"Bank hierher holen",
+ saveBackup:"Sicherungsdatei speichern",loadBackup:"Sicherungsdatei laden",erase:"Bank von diesem Gerät löschen",reallyErase:"Wirklich alles löschen?",erased:"Bank von diesem Gerät gelöscht.",
+ installHint:"Um sie wie eine App zu nutzen, installiere sie über das Browsermenü. Auf dem iPhone: Teilen, dann Zum Home-Bildschirm.",install:"App installieren",
+ qrText:"Öffne Pocket Bank auf dem neuen Gerät, wähle „Bank hierher holen“ und scanne diesen Code. Er enthält die ganze Bank samt PIN, zeig ihn also nur deinen eigenen Geräten.",
+ qrMerged:"Ältere Buchungen wurden zu Monatssummen zusammengefasst, damit die Bank in einen Code passt. Die Kontostände bleiben gleich.",qrTooBig:"Diese Bank ist zu groß für einen Code. Nutze stattdessen eine Sicherungsdatei.",
+ copyLink:"Link kopieren",copied:"Link kopiert.",closeBtn:"Schließen",scanText:"Richte die Kamera auf den Code auf dem anderen Gerät.",noCam:"Die Kamera ist nicht verfügbar. Füge stattdessen den Übertragungslink ein.",
+ pasteLink:"Oder Übertragungslink einfügen",useLink:"Link verwenden",badCode:"Das ist kein Pocket-Bank-Code.",
+ impTitle:"Bank auf diesem Gerät ersetzen?",impText:"Die ankommende Bank hat diese Konten: {names}. Alles, was jetzt auf diesem Gerät ist, wird ersetzt.",impNone:"noch keine",
+ replace:"Ersetzen",moved:"Die Bank ist jetzt auf diesem Gerät.",badFile:"Diese Datei ist keine Pocket-Bank-Sicherung.",
  yr:"J.",mo:"Mon."}
 };
 const tr=(k,v)=>{ let s=(L[S.lang]||L.en)[k]; if(s==null) s=L.en[k]; if(v) for(const x in v) s=s.split("{"+x+"}").join(v[x]); return s; };
@@ -291,42 +357,33 @@ const money=(c,whole)=>{ const n=(Math.abs(c)/100).toFixed(whole?0:2); return (c
 const rid=()=>Math.random().toString(36).slice(2,9);
 
 let S=defaultState(), raw="", loaded=false, unlocked=false, docRef=null, stale=false;
-const ui={kid:null, all:false, rules:false, accts:false, arm:null};
+const ui={kid:null, all:false, rules:false, accts:false, dev:false, arm:null, armErase:false};
 const KEY="pocketbank";
 
 /* ---------- storage ---------- */
 function adopt(data){ const j=JSON.stringify(data||null); if(loaded && j===raw) return; raw=j;
   S=Object.assign(defaultState(), data?JSON.parse(j):{}); settle(S,today()); loaded=true; render(); }
-let chain=Promise.resolve();
 function save(){ raw=JSON.stringify(S); render();
-  if(!docRef){ try{localStorage.setItem(KEY,raw)}catch(e){ toast(tr("noStore")) } return; }
-  const body=JSON.parse(raw);
-  chain=chain.then(()=>docRef.set(body)).catch(()=>toast(tr("noSave"))); }
-async function boot(){
-  let db=null; try{ db=await (window.claude&&window.claude.use?window.claude.use("db"):null) }catch(e){}
-  if(!db){ let d=null; try{d=JSON.parse(localStorage.getItem(KEY))}catch(e){} adopt(d); return; }
-  docRef=db.doc("bank/main");
-  const timer=setTimeout(()=>{ stale=true; if(!loaded) adopt(null); else render(); },10000);
-  docRef.onSnapshot(snap=>{ const was=stale; if(!snap.metadata.fromCache){clearTimeout(timer);stale=false}
-      adopt(snap.exists?snap.data():null); if(was!==stale) render(); },
-    ()=>{ clearTimeout(timer); stale=true; if(!loaded) adopt(null); else render(); });
-}
+  try{ localStorage.setItem(KEY,raw); if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }
+  catch(e){ toast(tr("noStore")); } }
+function boot(){ let d=null; try{d=JSON.parse(localStorage.getItem(KEY))}catch(e){} adopt(d);
+  if(location.hash.startsWith("#m=")) incoming(location.hash.slice(3)); }
 
 /* ---------- PIN ---------- */
 async function hash(pin){ const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("pocketbank:"+pin));
   return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
-let pinMode="enter";
-function askPin(mode){ pinMode=mode; $("#pin-in").value=""; $("#pin-err").textContent="";
+let pinMode="enter", pinThen=null;
+function askPin(mode,then){ pinMode=mode; pinThen=then||null; $("#pin-in").value=""; $("#pin-err").textContent="";
   $("#pin-title").textContent=tr(mode==="set"?"pinChoose":"pinTitle");
   $("#pin-sub").textContent=tr(mode==="set"?"pinSetSub":"pinEnterSub");
   $("#pin-cancel").textContent=tr("cancel");
   $("#pin").showModal(); $("#pin-in").focus(); }
-$("#pin-cancel").onclick=()=>$("#pin").close();
+$("#pin-cancel").onclick=()=>{ pinThen=null; $("#pin").close(); };
 $("#pin-form").addEventListener("submit",async e=>{ e.preventDefault(); const p=$("#pin-in").value;
   if(!/^\d{4}$/.test(p)){ $("#pin-err").textContent=tr("pin4"); return; }
   const h=await hash(p);
   if(pinMode==="set"){ S.pinHash=h; unlocked=true; $("#pin").close(); save(); toast(tr("pinSaved")); }
-  else if(h===S.pinHash){ unlocked=true; $("#pin").close(); render(); }
+  else if(h===S.pinHash){ unlocked=true; $("#pin").close(); render(); if(pinThen){ const f=pinThen; pinThen=null; f(); } }
   else { $("#pin-err").textContent=tr("pinWrong"); $("#pin-in").value=""; } });
 $("#lock").onclick=()=>{ if(unlocked){unlocked=false;render()} else askPin(S.pinHash?"enter":"set"); };
 
@@ -342,7 +399,7 @@ function render(){
   if(stale) h+=`<p class="note">${tr("stale")}</p>`;
   if(S.example) h+=`<p class="note">${tr("example")}</p>`;
   if(S.kids.length>1) h+=`<nav class="kids" aria-label="${tr("accounts")}">${S.kids.map(x=>`<button type="button" class="kid" data-act="pick" data-id="${x.id}" aria-pressed="${x===k}"><i>${esc(x.name.slice(0,1).toUpperCase())}</i>${esc(x.name)}</button>`).join("")}</nav>`;
-  if(!k) h+=`<p class="note">${tr(unlocked?"noAcctsOpen":"noAcctsLocked")}</p>`;
+  if(!k) h+=`<p class="note">${tr(unlocked?"noAcctsOpen":"noAcctsLocked")}</p>`+(emptyDevice()?`<div><button class="btn" type="button" data-act="scan">${tr("moveIn")}</button></div>`:"");
   else h+=hero(k);
   if(unlocked) h+=desk(k);
   if(k){
@@ -390,6 +447,11 @@ function desk(k){ const b=k?bal(k):null, t=today(); let h=`<section class="desk"
     <form class="row" data-form="kid"><label class="f">${tr("newFor")}<input id="k-name" maxlength="20" placeholder="${tr("childName")}" required></label><button class="btn primary" type="submit">${tr("open")}</button></form>
     <div class="row"><button class="btn small" type="button" data-act="pin">${tr("changePin")}</button>
       ${S.example?`<button class="btn small danger" type="button" data-act="clear">${tr("clearEx")}</button>`:""}</div></div></details>`;
+  h+=`<details data-d="dev" ${ui.dev?"open":""}><summary>${tr("device")}</summary><div>
+    <p class="sub">${tr("devNote")} ${tr("installHint")}</p>
+    <div class="row"><button class="btn small" type="button" data-act="qr">${tr("moveOut")}</button><button class="btn small" type="button" data-act="scan">${tr("moveIn")}</button></div>
+    <div class="row"><button class="btn small" type="button" data-act="backup">${tr("saveBackup")}</button><button class="btn small" type="button" data-act="restore">${tr("loadBackup")}</button>
+      <button class="btn small danger" type="button" data-act="erase">${tr(ui.armErase?"reallyErase":"erase")}</button></div></div></details>`;
   return h+`</section>`; }
 
 function book(k){ let run=0; const rows=k.tx.map(t=>{ const d=(t.t==="in"||t.t==="int"||t.t==="ret")?t.a:(t.t==="out"?-t.a:0); run+=d; return {t,d,run}; }).reverse();
@@ -405,8 +467,14 @@ function book(k){ let run=0; const rows=k.tx.map(t=>{ const d=(t.t==="in"||t.t==
 app.addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const a=b.dataset.act, id=b.dataset.id;
   if(a==="pick"){ ui.kid=id; ui.all=false; render(); return; }
   if(a==="all"){ ui.all=!ui.all; render(); return; }
+  if(a==="scan"&&emptyDevice()){ openScan(); return; }
   if(!unlocked) return;
   if(a==="pin") askPin("set");
+  else if(a==="qr") showQr();
+  else if(a==="scan") openScan();
+  else if(a==="backup") saveBackup();
+  else if(a==="restore") $("#file-in").click();
+  else if(a==="erase"){ if(!ui.armErase){ ui.armErase=true; ui.dev=true; render(); } else { try{localStorage.removeItem(KEY)}catch(e){} S=defaultState(); raw="null"; unlocked=false; ui.armErase=false; render(); toast(tr("erased")); } }
   else if(a==="rename"){ const v=$("#n-"+id).value.trim(); if(v){ S.kids.find(k=>k.id===id).name=v; save(); toast(tr("renamed")); } }
   else if(a==="remove"){ if(ui.arm!==id){ ui.arm=id; ui.accts=true; render(); } else { S.kids=S.kids.filter(k=>k.id!==id); ui.arm=null; save(); toast(tr("closed")); } }
   else if(a==="clear"){ S.kids=[]; S.example=false; ui.accts=true; save(); toast(tr("cleared")); }
@@ -491,6 +559,96 @@ function drawFuture(k){ const el=$("#c2"), b=bal(k), p=$("#p2");
 
 let rw; new ResizeObserver(()=>{ clearTimeout(rw); rw=setTimeout(()=>{ const k=kid(); if(k&&$("#c1")){ drawHistory(k); drawFuture(k); } },120); }).observe(app);
 new MutationObserver(()=>{ if(loaded) render(); }).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+
+/* ---------- move to another device, backup, install ---------- */
+const emptyDevice=()=>!S.pinHash&&!S.kids.length;
+const TYPES=["in","out","int","buy","sell","ret"];
+// anything that arrives from a code or a file is rebuilt field by field
+function normalize(d){ if(!d||typeof d!=="object"||!Array.isArray(d.kids)) throw new Error("bad");
+  const n=(v,def)=>isFinite(+v)&&v!==null&&v!==""?+v:def, o=defaultState(), i=d.interest||{}, v=d.invest||{};
+  o.lang=L[d.lang]?d.lang:"en"; o.currency=String(d.currency||"€").slice(0,3); o.example=!!d.example;
+  o.pinHash=/^[0-9a-f]{64}$/.test(d.pinHash)?d.pinHash:"";
+  o.interest={on:!!i.on, rate:n(i.rate,1), per:i.per==="year"?"year":"month"};
+  o.invest={on:!!v.on, rate:n(v.rate,6), swing:Math.abs(n(v.swing,3))};
+  o.kids=d.kids.slice(0,20).map(k=>({id:rid(), name:String(k.name||"?").slice(0,20), thru:/^\d{4}-\d\d$/.test(k.thru)?k.thru:today().slice(0,7),
+    tx:(Array.isArray(k.tx)?k.tx:[]).filter(t=>t&&/^\d{4}-\d\d-\d\d$/.test(t.d)&&TYPES.includes(t.t)&&isFinite(+t.a))
+      .map(t=>({id:rid(), d:t.d, t:t.t, a:Math.round(+t.a), n:String(t.n||"").slice(0,40)})).sort((x,y)=>x.d<y.d?-1:x.d>y.d?1:0)}));
+  return o; }
+const pack=o=>({v:1,l:o.lang,c:o.currency,p:o.pinHash,e:o.example?1:0,i:[o.interest.on?1:0,o.interest.rate,o.interest.per],n:[o.invest.on?1:0,o.invest.rate,o.invest.swing],
+  k:o.kids.map(k=>[k.name,k.thru,k.tx.map(t=>t.n?[t.d,t.t,t.a,t.n]:[t.d,t.t,t.a])])});
+const unpack=q=>({lang:q.l,currency:q.c,pinHash:q.p,example:q.e,interest:{on:q.i[0],rate:q.i[1],per:q.i[2]},invest:{on:q.n[0],rate:q.n[1],swing:q.n[2]},
+  kids:q.k.map(k=>({name:k[0],thru:k[1],tx:k[2].map(t=>({d:t[0],t:t[1],a:t[2],n:t[3]||""}))}))});
+async function pipe(bytes,stream){ return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer()); }
+async function enc(obj){ let b=new TextEncoder().encode(JSON.stringify(obj)), tag="r";
+  if(window.CompressionStream){ b=await pipe(b,new CompressionStream("deflate-raw")); tag="z"; }
+  let str=""; b.forEach(x=>str+=String.fromCharCode(x)); return tag+btoa(str).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
+async function dec(str){ let b=Uint8Array.from(atob(str.slice(1).replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0));
+  if(str[0]==="z") b=await pipe(b,new DecompressionStream("deflate-raw"));
+  return JSON.parse(new TextDecoder().decode(b)); }
+// merge entries before `cut` (YYYY-MM) into one line per month and kind, so a long history still fits in one code
+function squash(o,cut){ const c=JSON.parse(JSON.stringify(o));
+  for(const k of c.kids){ const keep=[], g={};
+    for(const t of k.tx){ if(t.d.slice(0,7)>=cut){ keep.push(t); continue; } const key=t.d.slice(0,7)+t.t; if(g[key]){ g[key].a+=t.a; g[key].d=t.d; } else g[key]={id:"",d:t.d,t:t.t,a:t.a,n:""}; }
+    k.tx=Object.values(g).concat(keep).sort((x,y)=>x.d<y.d?-1:x.d>y.d?1:0); }
+  return c; }
+function ymBack(n){ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-n); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+const QR_MAX=1400;
+async function transfer(){ const base=location.href.split("#")[0]+"#m=";
+  for(const back of [null,12,6,3,1,-1]){ const code=await enc(pack(back===null?S:squash(S,ymBack(back)))); if(base.length+code.length<=QR_MAX) return {url:base+code, merged:back!==null}; }
+  return null; }
+
+let qrUrl="";
+async function showQr(){ const r=await transfer(), cv=$("#qr-canvas");
+  $("#qr-title").textContent=tr("moveOut"); $("#qr-close").textContent=tr("closeBtn"); $("#qr-copy").textContent=tr("copyLink");
+  cv.hidden=!r; $("#qr-copy").hidden=!r; $("#qr-text").textContent=r?tr("qrText"):tr("qrTooBig"); $("#qr-note").textContent=r&&r.merged?tr("qrMerged"):""; $("#qr-note").hidden=!(r&&r.merged);
+  if(r){ qrUrl=r.url; const q=qrcode(0,"L"); q.addData(r.url); q.make(); const n=q.getModuleCount(), px=6, pad=4;
+    cv.width=cv.height=(n+pad*2)*px; const g=cv.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,cv.width,cv.height); g.fillStyle="#000";
+    for(let y=0;y<n;y++) for(let x=0;x<n;x++) if(q.isDark(y,x)) g.fillRect((x+pad)*px,(y+pad)*px,px,px); }
+  $("#qr").showModal(); }
+$("#qr-close").onclick=()=>$("#qr").close();
+$("#qr-copy").onclick=()=>{ navigator.clipboard.writeText(qrUrl).then(()=>toast(tr("copied")),()=>{}); };
+
+let stream=null, scanning=false;
+async function openScan(){ $("#scan-title").textContent=tr("moveIn"); $("#scan-text").textContent=tr("scanText"); $("#scan-lab").textContent=tr("pasteLink");
+  $("#scan-close").textContent=tr("cancel"); $("#scan-use").textContent=tr("useLink"); $("#scan-paste").value="";
+  const v=$("#scan-video"); v.hidden=false; $("#scan").showModal();
+  try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}); if(!$("#scan").open){ stopScan(); return; }
+    v.srcObject=stream; await v.play(); scanning=true; const cv=document.createElement("canvas"), g=cv.getContext("2d",{willReadFrequently:true});
+    const tick=()=>{ if(!scanning) return;
+      if(v.videoWidth){ const k=Math.min(1,900/Math.max(v.videoWidth,v.videoHeight)); cv.width=v.videoWidth*k|0; cv.height=v.videoHeight*k|0; g.drawImage(v,0,0,cv.width,cv.height);
+        const hit=jsQR(g.getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height,{inversionAttempts:"dontInvert"});
+        if(hit&&hit.data.includes("#m=")){ $("#scan").close(); incoming(hit.data.split("#m=")[1]); return; } }
+      requestAnimationFrame(tick); };
+    tick();
+  }catch(e){ v.hidden=true; $("#scan-text").textContent=tr("noCam"); } }
+function stopScan(){ scanning=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } $("#scan-video").srcObject=null; }
+$("#scan").addEventListener("close",stopScan);
+$("#scan-close").onclick=()=>$("#scan").close();
+$("#scan-form").addEventListener("submit",e=>{ e.preventDefault(); const v=$("#scan-paste").value.trim(); if(!v) return; $("#scan").close(); incoming(v.includes("#m=")?v.split("#m=")[1]:v); });
+
+let pending=null;
+async function incoming(code){ if(location.hash) history.replaceState(null,"",location.pathname+location.search);
+  let st; try{ st=normalize(unpack(await dec(code))); }catch(e){ toast(tr("badCode")); return; }
+  offer(st); }
+function offer(st){ const go=()=>{ pending=st; $("#imp-title").textContent=tr("impTitle"); $("#imp-text").textContent=tr("impText",{names:st.kids.map(k=>k.name).join(", ")||tr("impNone")});
+    $("#imp-cancel").textContent=tr("cancel"); $("#imp-ok").textContent=tr("replace"); $("#imp").showModal(); };
+  if(emptyDevice()) take(st); else if(unlocked) go(); else askPin("enter",go); }
+function take(st){ S=st; settle(S,today()); unlocked=false; ui.kid=null; ui.dev=false; save(); toast(tr("moved")); }
+$("#imp-cancel").onclick=()=>{ pending=null; $("#imp").close(); };
+$("#imp-ok").onclick=()=>{ const st=pending; pending=null; $("#imp").close(); if(st) take(st); };
+addEventListener("hashchange",()=>{ if(location.hash.startsWith("#m=")) incoming(location.hash.slice(3)); });
+
+function saveBackup(){ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,1)],{type:"application/json"}));
+  a.download="pocket-bank-"+today()+".json"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
+$("#file-in").addEventListener("change",async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  try{ offer(normalize(JSON.parse(await f.text()))); }catch(err){ toast(tr("badFile")); } });
+
+let installEvt=null;
+addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); installEvt=e; const b=$("#install"); b.textContent=tr("install"); b.hidden=false; });
+$("#install").onclick=()=>{ if(installEvt){ installEvt.prompt(); installEvt=null; $("#install").hidden=true; } };
+addEventListener("appinstalled",()=>{ $("#install").hidden=true; });
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&loaded&&settle(S,today())) render(); });
+if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 boot();
 </script>
 </body>
